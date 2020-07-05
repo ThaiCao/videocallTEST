@@ -17,6 +17,7 @@ import pub.devrel.easypermissions.AfterPermissionGranted
 import pub.devrel.easypermissions.EasyPermissions
 import java.net.URISyntaxException
 import java.util.*
+import java.util.concurrent.ScheduledExecutorService
 
 class TestActivity : AppCompatActivity() {
 
@@ -27,10 +28,28 @@ class TestActivity : AppCompatActivity() {
         private const val UserId: String = "User11211"
     }
 
+    val VIDEO_TRACK_ID = "ARDAMSv0"
+    val AUDIO_TRACK_ID = "ARDAMSa0"
+    val VIDEO_TRACK_TYPE = "video"
+    private val VIDEO_CODEC_VP8 = "VP8"
+    private val VIDEO_CODEC_VP9 = "VP9"
+    private val VIDEO_CODEC_H264 = "H264"
+    private val AUDIO_CODEC_OPUS = "opus"
+    private val AUDIO_CODEC_ISAC = "ISAC"
+    private val VIDEO_CODEC_PARAM_START_BITRATE = "x-google-start-bitrate"
+    private val VIDEO_FLEXFEC_FIELDTRIAL = "WebRTC-FlexFEC-03/Enabled/"
+    private val AUDIO_CODEC_PARAM_BITRATE = "maxaveragebitrate"
+    private val AUDIO_ECHO_CANCELLATION_CONSTRAINT = "googEchoCancellation"
+    private val AUDIO_AUTO_GAIN_CONTROL_CONSTRAINT = "googAutoGainControl"
+    private val AUDIO_HIGH_PASS_FILTER_CONSTRAINT = "googHighpassFilter"
+    private val AUDIO_NOISE_SUPPRESSION_CONSTRAINT = "googNoiseSuppression"
+    private val AUDIO_LEVEL_CONTROL_CONSTRAINT = "levelControl"
+    private val DTLS_SRTP_KEY_AGREEMENT_CONSTRAINT = "DtlsSrtpKeyAgreement"
+
+
     val VIDEO_RESOLUTION_WIDTH = 1280
     val VIDEO_RESOLUTION_HEIGHT = 720
     val FPS = 30
-    val VIDEO_TRACK_ID = "ARDAMSv0"
 
     private var socket: Socket? = null
     private var isInitiator = false
@@ -41,6 +60,21 @@ class TestActivity : AppCompatActivity() {
     private var rootEglBase: EglBase? = null
     private var factory: PeerConnectionFactory? = null
     private var videoTrackFromCamera: VideoTrack? = null
+
+    var options: PeerConnectionFactory.Options? = null
+    private var audioSource: AudioSource? = null
+    private var videoSource: VideoSource? = null
+    private var localVideoTrack: VideoTrack? = null
+    private val remoteVideoTrack: VideoTrack? = null
+    private var localVideoSender: RtpSender? = null
+
+    // enableAudio is set to true if audio should be sent.
+    private var enableAudio = true
+    private var localAudioTrack: AudioTrack? = null
+    private var audioConstraints: MediaConstraints? = null
+    private var sdpMediaConstraints: MediaConstraints? = null
+    private var pcConstraints: MediaConstraints? = null
+    private val executor: ScheduledExecutorService? = java.util.concurrent.Executors.newSingleThreadScheduledExecutor()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,6 +90,8 @@ class TestActivity : AppCompatActivity() {
         )
         if (EasyPermissions.hasPermissions(this, *perms)) {
             connectToSignallingServer()
+            createMediaConstraintsInternal()
+
             initializeSurfaceViews()
             initializePeerConnectionFactory()
             createVideoTrackFromCameraAndShowIt()
@@ -179,7 +215,7 @@ class TestActivity : AppCompatActivity() {
 
     private fun doCall() {
 //        val sdpMediaConstraints = offerOrAnswerConstraint()
-        val sdpMediaConstraints = MediaConstraints()
+//        val sdpMediaConstraints = MediaConstraints()
         peerConnection!!.createOffer(object : SimpleSdpObserver() {
             override fun onCreateSuccess(sessionDescription: SessionDescription?) {
                 Log.e(TAG,"doCall createOffer onCreateSuccess: ${sessionDescription.toString()}")
@@ -210,7 +246,58 @@ class TestActivity : AppCompatActivity() {
                     e.printStackTrace()
                 }
             }
-        }, MediaConstraints())
+        }, sdpMediaConstraints)
+    }
+
+    private fun createMediaConstraintsInternal(){
+
+        // Create peer connection constraints.
+
+        // Create peer connection constraints.
+        pcConstraints = MediaConstraints()
+        // Enable DTLS for normal calls and disable for loopback calls.
+        // Enable DTLS for normal calls and disable for loopback calls.
+        pcConstraints!!.optional.add(MediaConstraints.KeyValuePair(DTLS_SRTP_KEY_AGREEMENT_CONSTRAINT,"false"))
+//        if (peerConnectionParameters.loopback) {
+//            pcConstraints!!.optional.add(MediaConstraints.KeyValuePair(DTLS_SRTP_KEY_AGREEMENT_CONSTRAINT,"false"))
+//        } else {
+//            pcConstraints!!.optional.add(MediaConstraints.KeyValuePair(DTLS_SRTP_KEY_AGREEMENT_CONSTRAINT,"true"))
+//        }
+
+        // Create SDP constraints.
+        sdpMediaConstraints = MediaConstraints()
+        sdpMediaConstraints!!.mandatory.add(
+            MediaConstraints.KeyValuePair("OfferToReceiveAudio", "true")
+        )
+        sdpMediaConstraints!!.mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
+//        if (videoCallEnabled || peerConnectionParameters.loopback) {
+//            sdpMediaConstraints!!.mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "true"))
+//        } else {
+//            sdpMediaConstraints!!.mandatory.add(MediaConstraints.KeyValuePair("OfferToReceiveVideo", "false"))
+//        }
+
+
+
+        // Create audio constraints.
+        audioConstraints = MediaConstraints()
+        // added for audio performance measurements
+        // added for audio performance measurements
+        audioConstraints!!.mandatory.add(MediaConstraints.KeyValuePair(AUDIO_ECHO_CANCELLATION_CONSTRAINT,"false"))
+        audioConstraints!!.mandatory.add(MediaConstraints.KeyValuePair(AUDIO_AUTO_GAIN_CONTROL_CONSTRAINT,"false"))
+        audioConstraints!!.mandatory.add(MediaConstraints.KeyValuePair(AUDIO_HIGH_PASS_FILTER_CONSTRAINT,"false"))
+        audioConstraints!!.mandatory.add(MediaConstraints.KeyValuePair(AUDIO_NOISE_SUPPRESSION_CONSTRAINT,"false"))
+
+//        if (peerConnectionParameters.noAudioProcessing) {
+//            Log.d(TAG,"Disabling audio processing")
+//            audioConstraints!!.mandatory.add(MediaConstraints.KeyValuePair(AUDIO_ECHO_CANCELLATION_CONSTRAINT,"false"))
+//            audioConstraints!!.mandatory.add(MediaConstraints.KeyValuePair(AUDIO_AUTO_GAIN_CONTROL_CONSTRAINT,"false"))
+//            audioConstraints!!.mandatory.add(MediaConstraints.KeyValuePair(AUDIO_HIGH_PASS_FILTER_CONSTRAINT,"false"))
+//            audioConstraints!!.mandatory.add(MediaConstraints.KeyValuePair(AUDIO_NOISE_SUPPRESSION_CONSTRAINT,"false"))
+//        }
+//        if (peerConnectionParameters.enableLevelControl) {
+//            Log.d(TAG,"Enabling level control.")
+//            audioConstraints!!.mandatory.add(MediaConstraints.KeyValuePair(AUDIO_LEVEL_CONTROL_CONSTRAINT,"true"))
+//        }
     }
 
     private fun offerOrAnswerConstraint(): MediaConstraints? {
@@ -264,9 +351,32 @@ class TestActivity : AppCompatActivity() {
     private fun startStreamingVideo() {
         val mediaStream = factory!!.createLocalMediaStream("ARDAMS")
         mediaStream.addTrack(videoTrackFromCamera)
+        mediaStream.addTrack(createAudioTrack())
         peerConnection!!.addStream(mediaStream)
 //        sendMessage("got user media")
         sendMessage(UserId)
+        findVideoSender()
+    }
+
+    private fun findVideoSender() {
+        for (sender in peerConnection!!.senders) {
+            if (sender.track() != null) {
+                val trackType = sender.track().kind()
+                if (trackType == VIDEO_TRACK_TYPE) {
+                    Log.d(TAG,"Found video sender.")
+                    localVideoSender = sender
+                }
+            }
+        }
+    }
+
+    fun setAudioEnabled(enable: Boolean) {
+        executor!!.execute {
+            enableAudio = enable
+            if (localAudioTrack != null) {
+                localAudioTrack!!.setEnabled(enableAudio)
+            }
+        }
     }
 
     private fun createPeerConnection(factory: PeerConnectionFactory): PeerConnection {
@@ -280,7 +390,8 @@ class TestActivity : AppCompatActivity() {
         iceServers.add(IceServer("turns:ss-turn2.xirsys.com:443?transport=tcp","yEMjNNWgsYpAE1yBfxi9aEcdyVR7h7Oqh1kQmucfFgre3wn-rvQmUCeBgiJ-OL-sAAAAAF77JAJraG9haW5ib3g=","1989b4ea-bac6-11ea-a6ed-0242ac140004"))
         iceServers.add(IceServer("turns:ss-turn2.xirsys.com:5349?transport=tcp","yEMjNNWgsYpAE1yBfxi9aEcdyVR7h7Oqh1kQmucfFgre3wn-rvQmUCeBgiJ-OL-sAAAAAF77JAJraG9haW5ib3g=","1989b4ea-bac6-11ea-a6ed-0242ac140004"))
         val rtcConfig = RTCConfiguration(iceServers)
-        val pcConstraints = MediaConstraints()
+//        val pcConstraints = offerOrAnswerConstraint()
+//        val pcConstraints = MediaConstraints()
         val pcObserver: Observer = object : Observer {
             override fun onSignalingChange(signalingState: SignalingState) {
                 Log.e(TAG,"onSignalingChange: ${signalingState.name} - ordinal: ${signalingState.ordinal}")
@@ -373,5 +484,25 @@ class TestActivity : AppCompatActivity() {
     private fun useCamera2(): Boolean {
         return Camera2Enumerator.isSupported(this)
     }
+
+
+    private fun createAudioTrack(): AudioTrack? {
+        audioSource = factory!!.createAudioSource(audioConstraints)
+        localAudioTrack = factory!!.createAudioTrack(AUDIO_TRACK_ID, audioSource)
+        localAudioTrack!!.setEnabled(enableAudio)
+        return localAudioTrack
+    }
+
+//    private fun createVideoTrack(capturer: VideoCapturer): VideoTrack? {
+//        videoSource = factory!!.createVideoSource(capturer)
+////        capturer.startCapture(videoWidth, videoHeight, videoFps)
+//        capturer.startCapture(VIDEO_RESOLUTION_WIDTH, VIDEO_RESOLUTION_HEIGHT, FPS)
+//        localVideoTrack = factory!!.createVideoTrack(VIDEO_TRACK_ID,
+//            videoSource
+//        )
+//        localVideoTrack!!.setEnabled(renderVideo)
+//        localVideoTrack!!.addRenderer(VideoRenderer(localRender))
+//        return localVideoTrack
+//    }
 
 }
