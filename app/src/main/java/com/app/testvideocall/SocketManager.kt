@@ -118,10 +118,15 @@ class SocketManager : IEvent{
     }
 
     override fun onAnswer(userId: String?, sdp: String?) {
+        Log.e("TEST_DATA","SocketManager onAnswer activity: $activity")
+        if(activity !=null && activity is TestActivity){
+//            ((activity as TestActivity).setRemoteDescription(SessionDescription(SessionDescription.Type.ANSWER,  sdp)))
+            ((activity as TestActivity).doAnwserSdp(sdp))
+        }
     }
 
     override fun onIceCandidate( sdp: String?,sdpMLineIndex: Int,sdpMid: String?, action: String?) {
-        Log.e("TEST_DATA","SocketManager onIceCandidate activity: $activity")
+//        Log.e("TEST_DATA","SocketManager onIceCandidate activity: $activity")
         if(activity !=null && activity is TestActivity){
             ((activity as TestActivity).addRemoteIceCandidate(IceCandidate(sdpMid, sdpMLineIndex, sdp)))
         }
@@ -146,6 +151,14 @@ class SocketManager : IEvent{
         Log.e("TEST_DATA","SocketManager onSetRemoteDescription activity: $activity - type: $type")
         if(activity !=null && activity is TestActivity){
             ((activity as TestActivity).setRemoteDescription(SessionDescription(SessionDescription.Type.ANSWER,  sdp)))
+//            ((activity as TestActivity).start(2))
+        }
+    }
+
+    override fun onInitConnection() {
+        Log.e("TEST_DATA","SocketManager onInitConnection activity: $activity")
+        if(activity !=null && activity is TestActivity){
+            (activity as TestActivity).onInitConnection()
         }
     }
 

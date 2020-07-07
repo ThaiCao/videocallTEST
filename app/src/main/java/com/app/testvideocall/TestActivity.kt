@@ -5,6 +5,8 @@ package com.app.testvideocall
 //import io.socket.emitter.Emitter
 import android.Manifest
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import kotlinx.android.synthetic.main.activity_test.*
@@ -74,6 +76,7 @@ class TestActivity : AppCompatActivity(), SdpObserver {
     private val executor: ScheduledExecutorService? = java.util.concurrent.Executors.newSingleThreadScheduledExecutor()
     private var isOffer = false
     private var localSdp: SessionDescription? = null
+    private var remoteSdp: SessionDescription? = null
     private var queuedRemoteCandidates: ArrayList<IceCandidate>? = ArrayList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -81,28 +84,59 @@ class TestActivity : AppCompatActivity(), SdpObserver {
         setContentView(R.layout.activity_test)
 
         connectToSignallingServer()
+        SocketManager.getInstance()!!.setActivity(this)
         btnCall.setOnClickListener {
-            start()
+            isOffer = true
+            onInitConnection()
+            start(1)
         }
 
     }
 
+    fun onInitConnection(){
+//        executor!!.execute {
+        Log.e("TEST_DATA", "onInitConnection createMediaConstraintsInternal")
+            createMediaConstraintsInternal()
+        Log.e("TEST_DATA", "onInitConnection initializeSurfaceViews")
+            initializeSurfaceViews()
+        Log.e("TEST_DATA", "onInitConnection initializePeerConnectionFactory")
+            initializePeerConnectionFactory()
+        Log.e("TEST_DATA", "onInitConnection createVideoTrackFromCameraAndShowIt")
+            createVideoTrackFromCameraAndShowIt()
+        Log.e("TEST_DATA", "onInitConnection initializePeerConnections")
+            initializePeerConnections()
+        Log.e("TEST_DATA", "onInitConnection startStreamingVideo")
+            startStreamingVideo()
+
+    }
+
+    fun doAnwserSdp(sdp: String?){
+        Handler(Looper.getMainLooper()).post {
+            onInitConnection()
+//            createAnswer()
+            remoteSdp = SessionDescription(SessionDescription.Type.OFFER,  sdp)
+            setRemoteDescription(remoteSdp)
+            start(2)
+        }
+    }
+
     @AfterPermissionGranted(RC_CALL)
-    fun start() {
+    fun start(value: Int) {
         val perms = arrayOf(
             Manifest.permission.CAMERA,
             Manifest.permission.RECORD_AUDIO
         )
         if (EasyPermissions.hasPermissions(this, *perms)) {
             // set tạm để call trước -> viết module xủ lý call
-            SocketManager.getInstance()!!.setActivity(this)
-            createMediaConstraintsInternal()
-            initializeSurfaceViews()
-            initializePeerConnectionFactory()
-            createVideoTrackFromCameraAndShowIt()
-            initializePeerConnections()
-            startStreamingVideo()
-            createOffer()
+
+
+            if(value == 1){
+                isOffer = true
+                createOffer()
+            }else{
+                isOffer = false
+                createAnswer()
+            }
         } else {
             EasyPermissions.requestPermissions(
                 this,
@@ -116,7 +150,7 @@ class TestActivity : AppCompatActivity(), SdpObserver {
     fun createOffer() {
         if (peerConnection == null) return
         Log.e("TEST_DATA", "createOffer")
-        setOffer(true)
+//        setOffer(true)
         peerConnection!!.createOffer(this, sdpMediaConstraints)
     }
 
@@ -160,8 +194,8 @@ class TestActivity : AppCompatActivity(), SdpObserver {
     }
 
     fun addRemoteIceCandidate(candidate: IceCandidate?) {
-        Log.e("dds_test", "addRemoteIceCandidate")
-        Log.e("TEST_DATA","TestActivity addRemoteIceCandidate candidate:  $candidate - peerConnection: $peerConnection")
+//        Log.e("dds_test", "addRemoteIceCandidate")
+//        Log.e("TEST_DATA","TestActivity addRemoteIceCandidate candidate:  $candidate - peerConnection: $peerConnection")
         if (peerConnection != null) {
             peerConnection!!.addIceCandidate(candidate)
 //            if (queuedRemoteCandidates != null) {
@@ -598,51 +632,65 @@ class TestActivity : AppCompatActivity(), SdpObserver {
     override fun onSetSuccess() {
         if (peerConnection == null) return
         Log.e("TEST_DATA", "PeerConnection onSetSuccess isOffer: $isOffer -- signalingState: " + peerConnection!!.signalingState().toString())
-        if (isOffer) {
-            Log.e("TEST_DATA", "PeerConnection onSetSuccess Remote SDP set succesfully :$isOffer")
-            if (!isOffer) {
+        Log.e("TEST_DATA", "PeerConnection peerConnection!!.remoteDescription : ${peerConnection!!.remoteDescription} -- peerConnection!!.localDescription: ${peerConnection!!.localDescription}" )
+        if (!isOffer) {
 //                    mEvent.onSendAnswer(mUserId, localSdp)
+//            if(localSdp !=null)
+            if (peerConnection!!.localDescription != null) {
                 SocketManager.getInstance()!!.sendAnswer(localSdp!!.description)
-            } else {
-//                    mEvent.onSendOffer(mUserId, localSdp)
-                SocketManager.getInstance()!!.sendOffer(localSdp!!.description)
             }
-//            if (peerConnection!!.remoteDescription == null) {
-//                Log.e("TEST_DATA", "PeerConnection onSetSuccess Remote SDP set succesfully :$isOffer")
-//                if (!isOffer) {
-////                    mEvent.onSendAnswer(mUserId, localSdp)
-//                    SocketManager.getInstance()!!.sendAnswer(localSdp!!.description)
-//                } else {
-////                    mEvent.onSendOffer(mUserId, localSdp)
-//                    SocketManager.getInstance()!!.sendOffer(localSdp!!.description)
-//                }
-//            } else {
-//                Log.e("TEST_DATA", "Remote SDP set succesfully")
-//                drainCandidates()
-//            }
+
         } else {
-            Log.e("TEST_DATA", "Local SDP set succesfully :$isOffer")
-            if (!isOffer) {
-//                    mEvent.onSendAnswer(mUserId, localSdp)
-                SocketManager.getInstance()!!.sendAnswer(localSdp!!.description)
-            } else {
-                SocketManager.getInstance()!!.sendOffer(localSdp!!.description)
 //                    mEvent.onSendOffer(mUserId, localSdp)
+            if (peerConnection!!.remoteDescription  == null) {
+                SocketManager.getInstance()!!.sendOffer(localSdp!!.description)
             }
-//            if (peerConnection!!.localDescription != null) {
-//                Log.e("TEST_DATA", "Local SDP set succesfully :$isOffer")
-//                if (!isOffer) {
-////                    mEvent.onSendAnswer(mUserId, localSdp)
-//                    SocketManager.getInstance()!!.sendAnswer(localSdp!!.description)
-//                } else {
-//                    SocketManager.getInstance()!!.sendOffer(localSdp!!.description)
-////                    mEvent.onSendOffer(mUserId, localSdp)
-//                }
-//                drainCandidates()
-//            } else {
-//                Log.e("TEST_DATA", "Remote SDP set succesfully")
-//            }
         }
+//        if (isOffer) {
+//            Log.e("TEST_DATA", "PeerConnection onSetSuccess Remote SDP set succesfully :$isOffer")
+//            if (!isOffer) {
+////                    mEvent.onSendAnswer(mUserId, localSdp)
+//                SocketManager.getInstance()!!.sendAnswer(localSdp!!.description)
+//            } else {
+////                    mEvent.onSendOffer(mUserId, localSdp)
+//                SocketManager.getInstance()!!.sendOffer(localSdp!!.description)
+//            }
+////            if (peerConnection!!.remoteDescription == null) {
+////                Log.e("TEST_DATA", "PeerConnection onSetSuccess Remote SDP set succesfully :$isOffer")
+////                if (!isOffer) {
+//////                    mEvent.onSendAnswer(mUserId, localSdp)
+////                    SocketManager.getInstance()!!.sendAnswer(localSdp!!.description)
+////                } else {
+//////                    mEvent.onSendOffer(mUserId, localSdp)
+////                    SocketManager.getInstance()!!.sendOffer(localSdp!!.description)
+////                }
+////            } else {
+////                Log.e("TEST_DATA", "Remote SDP set succesfully")
+////                drainCandidates()
+////            }
+//        } else {
+//            Log.e("TEST_DATA", "Local SDP set succesfully :$isOffer")
+//            if (!isOffer) {
+////                    mEvent.onSendAnswer(mUserId, localSdp)
+//                SocketManager.getInstance()!!.sendAnswer(localSdp!!.description)
+//            } else {
+//                SocketManager.getInstance()!!.sendOffer(localSdp!!.description)
+////                    mEvent.onSendOffer(mUserId, localSdp)
+//            }
+////            if (peerConnection!!.localDescription != null) {
+////                Log.e("TEST_DATA", "Local SDP set succesfully :$isOffer")
+////                if (!isOffer) {
+//////                    mEvent.onSendAnswer(mUserId, localSdp)
+////                    SocketManager.getInstance()!!.sendAnswer(localSdp!!.description)
+////                } else {
+////                    SocketManager.getInstance()!!.sendOffer(localSdp!!.description)
+//////                    mEvent.onSendOffer(mUserId, localSdp)
+////                }
+////                drainCandidates()
+////            } else {
+////                Log.e("TEST_DATA", "Remote SDP set succesfully")
+////            }
+//        }
     }
 
     override fun onCreateSuccess(origSdp: SessionDescription?) {

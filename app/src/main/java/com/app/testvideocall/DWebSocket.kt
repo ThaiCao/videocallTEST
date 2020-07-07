@@ -57,8 +57,11 @@ class DWebSocket(val serverUri: URI, val iEvent: IEvent) : WebSocketClient(serve
         when(eventName){
             "sdp"->{
                 val type =  map["type"] as String?
+                Log.e("TEST_DATA","WebSocket handleMessage type: $type" )
                 if(type.equals("offer")){
-
+                    val sdp =  map["sdp"] as String?
+//                    iEvent.onInitConnection()
+                    iEvent.onAnswer("",sdp)
                 }else{
                     val sdp =  map["sdp"] as String?
                     val type =  map["type"] as String?

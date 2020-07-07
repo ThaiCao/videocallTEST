@@ -53,4 +53,6 @@ interface IEvent {
     // viết thêm để set remote description
     fun onSetRemoteDescription(sdp: String?, type: String?)
 
+    // viết thêm
+    fun onInitConnection()
 }
