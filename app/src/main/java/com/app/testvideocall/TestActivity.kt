@@ -1,25 +1,22 @@
 package com.app.testvideocall
 
+//import io.socket.client.IO
+//import io.socket.client.Socket
+//import io.socket.emitter.Emitter
 import android.Manifest
 import android.os.Bundle
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
-import io.socket.client.IO
-import io.socket.client.Socket
-import io.socket.emitter.Emitter
 import kotlinx.android.synthetic.main.activity_test.*
 import org.json.JSONException
 import org.json.JSONObject
 import org.webrtc.*
 import org.webrtc.PeerConnection.*
-import org.webrtc.PeerConnection.Observer
 import pub.devrel.easypermissions.AfterPermissionGranted
 import pub.devrel.easypermissions.EasyPermissions
-import java.net.URISyntaxException
-import java.util.*
 import java.util.concurrent.ScheduledExecutorService
 
-class TestActivity : AppCompatActivity() {
+class TestActivity : AppCompatActivity(), SdpObserver {
 
     private val TAG = "TestActivity"
 
@@ -51,7 +48,7 @@ class TestActivity : AppCompatActivity() {
     val VIDEO_RESOLUTION_HEIGHT = 720
     val FPS = 30
 
-    private var socket: Socket? = null
+//    private var socket: Socket? = null
     private var isInitiator = false
     private var isChannelReady = false
     private var isStarted = false
@@ -75,11 +72,19 @@ class TestActivity : AppCompatActivity() {
     private var sdpMediaConstraints: MediaConstraints? = null
     private var pcConstraints: MediaConstraints? = null
     private val executor: ScheduledExecutorService? = java.util.concurrent.Executors.newSingleThreadScheduledExecutor()
+    private var isOffer = false
+    private var localSdp: SessionDescription? = null
+    private var queuedRemoteCandidates: ArrayList<IceCandidate>? = ArrayList()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_test)
-        start()
+
+        connectToSignallingServer()
+        btnCall.setOnClickListener {
+            start()
+        }
+
     }
 
     @AfterPermissionGranted(RC_CALL)
@@ -89,14 +94,13 @@ class TestActivity : AppCompatActivity() {
             Manifest.permission.RECORD_AUDIO
         )
         if (EasyPermissions.hasPermissions(this, *perms)) {
-            connectToSignallingServer()
             createMediaConstraintsInternal()
-
             initializeSurfaceViews()
             initializePeerConnectionFactory()
             createVideoTrackFromCameraAndShowIt()
             initializePeerConnections()
             startStreamingVideo()
+            createOffer()
         } else {
             EasyPermissions.requestPermissions(
                 this,
@@ -107,100 +111,163 @@ class TestActivity : AppCompatActivity() {
         }
     }
 
+    fun createOffer() {
+        if (peerConnection == null) return
+        Log.e("TEST_DATA", "createOffer")
+        setOffer(true)
+        peerConnection!!.createOffer(this, sdpMediaConstraints)
+    }
+
+    fun setLocalDescription(sdp: SessionDescription?) {
+        Log.e("TEST_DATA", "setLocalDescription")
+        if (peerConnection == null) return
+        peerConnection!!.setLocalDescription(this, sdp)
+    }
+
+    fun setOffer(isOffer: Boolean) {
+        this.isOffer = isOffer
+    }
+
+    fun createAnswer() {
+        if (peerConnection == null) return
+        Log.e("TEST_DATA", "createAnswer")
+        peerConnection!!.createAnswer(this, sdpMediaConstraints)
+    }
+
+    fun setRemoteDescription(sdp: SessionDescription?) {
+        if (peerConnection == null) return
+        Log.d("dds_test", "setRemoteDescription")
+        peerConnection!!.setRemoteDescription(this, sdp)
+    }
+
+    fun addLocalStream(stream: MediaStream?) {
+        if (peerConnection == null) return
+        Log.d("dds_test", "addLocalStream: $stream")
+        peerConnection!!.addStream(stream)
+    }
+
+    private fun drainCandidates() {
+        Log.e("TEST_DATA", "drainCandidates")
+        if (queuedRemoteCandidates != null) {
+            Log.e("TEST_DATA","Add " + queuedRemoteCandidates!!.size + " remote candidates")
+            for (candidate in queuedRemoteCandidates!!) {
+                peerConnection!!.addIceCandidate(candidate)
+            }
+            queuedRemoteCandidates = null
+        }
+    }
+
+    fun addRemoteIceCandidate(candidate: IceCandidate?) {
+        Log.e("dds_test", "addRemoteIceCandidate")
+        if (peerConnection != null) {
+            if (queuedRemoteCandidates != null) {
+                Log.e("dds_test", "addRemoteIceCandidate  2222")
+                if (candidate != null) {
+                    queuedRemoteCandidates!!.add(candidate)
+                }
+            } else {
+                Log.e("dds_test", "addRemoteIceCandidate1111")
+                peerConnection!!.addIceCandidate(candidate)
+            }
+        }
+    }
 
     private fun connectToSignallingServer() {
-        try {
-            socket = IO.socket("https://salty-sea-26559.herokuapp.com/")
-//            socket = IO.socket("https://wertcsocket.herokuapp.com/")
-            socket!!.on(
-                Socket.EVENT_CONNECT,
-                Emitter.Listener {
-//                    tvSocketStatus.text = " connect"
-                    Log.e(TAG,"connectToSignallingServer: connect")
-                    socket!!.emit("create or join", "foo")
-                }
-            ).on("ipaddr") {
-//                tvSocketStatus.text = " ipaddr"
-                Log.e(TAG,"connectToSignallingServer: ipaddr")
-            }.on("created") {
-//                tvSocketStatus.text = " created"
-                Log.e(TAG,"connectToSignallingServer: created")
-                isInitiator = true
-            }.on("full") {
-//                tvSocketStatus.text = " full"
-                Log.e(TAG,"connectToSignallingServer: full")
-            }.on("join") {
-//                tvSocketStatus.text = " join room"
-                Log.e(TAG,"connectToSignallingServer: join")
-                Log.e(TAG,"connectToSignallingServer: Another peer made a request to join room $it")
-                Log.e(TAG,"connectToSignallingServer: This peer is the initiator of room")
-                isChannelReady = true
-            }.on("joined") {Log.e(TAG,"connectToSignallingServer: joined")
-//                tvSocketStatus.text = " joined room"
-                isChannelReady = true
-            }.on("log") { args: Array<Any> ->
-                for (arg in args) {
-                    Log.e(TAG,"connectToSignallingServer -- log --: $arg")
-                }
-            }.on("message") {
-                Log.e(TAG,"connectToSignallingServer: got a message")
-            }.on("message") { args: Array<Any> ->
-                try {
-                    if (args[0] is String) {
-                        val message = args[0] as String
-                        Log.e(TAG,"connectToSignallingServer: -- got user media-- got message $message")
-//                        if (message == "got user media") {
-                        if (message == UserId) {
-                            maybeStart()
-                        }
-                    } else {
-                        val message = args[0] as JSONObject
-                        Log.e(TAG,"connectToSignallingServer: got message $message")
-//                        tvSocketStatus.text = message.getString("type")
-                        if (message.getString("type") == "offer") {
-                            Log.e(TAG,"connectToSignallingServer: received an offer $isInitiator $isStarted")
-                            if (!isInitiator && !isStarted) {
-                                maybeStart()
-                            }
-                            peerConnection!!.setRemoteDescription(
-                                SimpleSdpObserver(),
-                                SessionDescription(
-                                    SessionDescription.Type.OFFER,
-                                    message.getString("sdp")
-                                )
-                            )
-                            doAnswer()
-                        } else if (message.getString("type") == "answer" && isStarted) {
-                            peerConnection!!.setRemoteDescription(
-                                SimpleSdpObserver(),
-                                SessionDescription(
-                                    SessionDescription.Type.ANSWER,
-                                    message.getString("sdp")
-                                )
-                            )
-                        } else if (message.getString("type") == "candidate" && isStarted) {
-                            Log.e(TAG,"connectToSignallingServer: receiving candidates")
-                            val candidate = IceCandidate(
-                                message.getString("id"),
-                                message.getInt("label"),
-                                message.getString("candidate")
-                            )
-                            peerConnection!!.addIceCandidate(candidate)
-                        }
-                        /*else if (message === 'bye' && isStarted) {
-                                            handleRemoteHangup()
-                                        }*/
-                    }
-                } catch (e: JSONException) {
-                    e.printStackTrace()
-                }
-            }.on(Socket.EVENT_DISCONNECT) {
-                Log.e(TAG,"connectToSignallingServer: disconnect")
-            }
-            socket!!.connect()
-        } catch (e: URISyntaxException) {
-            e.printStackTrace()
-        }
+//        wss.setText("ws://192.168.1.138:5000/ws");
+//        SocketManager.getInstance().addUserStateCallback(this)
+        SocketManager.getInstance()!!.connect("wss://wertcsocket.herokuapp.com/",UserId, 0)
+//        try {
+//            socket = IO.socket("https://salty-sea-26559.herokuapp.com/")
+////            socket = IO.socket("https://wertcsocket.herokuapp.com/")
+//            socket!!.on(
+//                Socket.EVENT_CONNECT,
+//                Emitter.Listener {
+////                    tvSocketStatus.text = " connect"
+//                    Log.e(TAG,"connectToSignallingServer: connect")
+//                    socket!!.emit("create or join", "foo")
+//                }
+//            ).on("ipaddr") {
+////                tvSocketStatus.text = " ipaddr"
+//                Log.e(TAG,"connectToSignallingServer: ipaddr")
+//            }.on("created") {
+////                tvSocketStatus.text = " created"
+//                Log.e(TAG,"connectToSignallingServer: created")
+//                isInitiator = true
+//            }.on("full") {
+////                tvSocketStatus.text = " full"
+//                Log.e(TAG,"connectToSignallingServer: full")
+//            }.on("join") {
+////                tvSocketStatus.text = " join room"
+//                Log.e(TAG,"connectToSignallingServer: join")
+//                Log.e(TAG,"connectToSignallingServer: Another peer made a request to join room $it")
+//                Log.e(TAG,"connectToSignallingServer: This peer is the initiator of room")
+//                isChannelReady = true
+//            }.on("joined") {Log.e(TAG,"connectToSignallingServer: joined")
+////                tvSocketStatus.text = " joined room"
+//                isChannelReady = true
+//            }.on("log") { args: Array<Any> ->
+//                for (arg in args) {
+//                    Log.e(TAG,"connectToSignallingServer -- log --: $arg")
+//                }
+//            }.on("message") {
+//                Log.e(TAG,"connectToSignallingServer: got a message")
+//            }.on("message") { args: Array<Any> ->
+//                try {
+//                    if (args[0] is String) {
+//                        val message = args[0] as String
+//                        Log.e(TAG,"connectToSignallingServer: -- got user media-- got message $message")
+////                        if (message == "got user media") {
+//                        if (message == UserId) {
+//                            maybeStart()
+//                        }
+//                    } else {
+//                        val message = args[0] as JSONObject
+//                        Log.e(TAG,"connectToSignallingServer: got message $message")
+////                        tvSocketStatus.text = message.getString("type")
+//                        if (message.getString("type") == "offer") {
+//                            Log.e(TAG,"connectToSignallingServer: received an offer $isInitiator $isStarted")
+//                            if (!isInitiator && !isStarted) {
+//                                maybeStart()
+//                            }
+//                            peerConnection!!.setRemoteDescription(
+//                                SimpleSdpObserver(),
+//                                SessionDescription(
+//                                    SessionDescription.Type.OFFER,
+//                                    message.getString("sdp")
+//                                )
+//                            )
+//                            doAnswer()
+//                        } else if (message.getString("type") == "answer" && isStarted) {
+//                            peerConnection!!.setRemoteDescription(
+//                                SimpleSdpObserver(),
+//                                SessionDescription(
+//                                    SessionDescription.Type.ANSWER,
+//                                    message.getString("sdp")
+//                                )
+//                            )
+//                        } else if (message.getString("type") == "candidate" && isStarted) {
+//                            Log.e(TAG,"connectToSignallingServer: receiving candidates")
+//                            val candidate = IceCandidate(
+//                                message.getString("id"),
+//                                message.getInt("label"),
+//                                message.getString("candidate")
+//                            )
+//                            peerConnection!!.addIceCandidate(candidate)
+//                        }
+//                        /*else if (message === 'bye' && isStarted) {
+//                                            handleRemoteHangup()
+//                                        }*/
+//                    }
+//                } catch (e: JSONException) {
+//                    e.printStackTrace()
+//                }
+//            }.on(Socket.EVENT_DISCONNECT) {
+//                Log.e(TAG,"connectToSignallingServer: disconnect")
+//            }
+//            socket!!.connect()
+//        } catch (e: URISyntaxException) {
+//            e.printStackTrace()
+//        }
     }
 
     private fun maybeStart() {
@@ -288,14 +355,14 @@ class TestActivity : AppCompatActivity() {
         audioConstraints!!.mandatory.add(MediaConstraints.KeyValuePair(AUDIO_NOISE_SUPPRESSION_CONSTRAINT,"false"))
 
 //        if (peerConnectionParameters.noAudioProcessing) {
-//            Log.d(TAG,"Disabling audio processing")
+//            Log.e(TAG,"Disabling audio processing")
 //            audioConstraints!!.mandatory.add(MediaConstraints.KeyValuePair(AUDIO_ECHO_CANCELLATION_CONSTRAINT,"false"))
 //            audioConstraints!!.mandatory.add(MediaConstraints.KeyValuePair(AUDIO_AUTO_GAIN_CONTROL_CONSTRAINT,"false"))
 //            audioConstraints!!.mandatory.add(MediaConstraints.KeyValuePair(AUDIO_HIGH_PASS_FILTER_CONSTRAINT,"false"))
 //            audioConstraints!!.mandatory.add(MediaConstraints.KeyValuePair(AUDIO_NOISE_SUPPRESSION_CONSTRAINT,"false"))
 //        }
 //        if (peerConnectionParameters.enableLevelControl) {
-//            Log.d(TAG,"Enabling level control.")
+//            Log.e(TAG,"Enabling level control.")
 //            audioConstraints!!.mandatory.add(MediaConstraints.KeyValuePair(AUDIO_LEVEL_CONTROL_CONSTRAINT,"true"))
 //        }
     }
@@ -312,7 +379,8 @@ class TestActivity : AppCompatActivity() {
 
     private fun sendMessage(message: Any) {
         Log.e(TAG,"sendMessage: $message")
-        socket!!.emit("message", message)
+//        socket!!.emit("message", message)
+        SocketManager.getInstance()!!.sendMessage(message as String)
     }
 
 
@@ -354,7 +422,7 @@ class TestActivity : AppCompatActivity() {
         mediaStream.addTrack(createAudioTrack())
         peerConnection!!.addStream(mediaStream)
 //        sendMessage("got user media")
-        sendMessage(UserId)
+//        sendMessage(UserId)
         findVideoSender()
     }
 
@@ -363,7 +431,7 @@ class TestActivity : AppCompatActivity() {
             if (sender.track() != null) {
                 val trackType = sender.track().kind()
                 if (trackType == VIDEO_TRACK_TYPE) {
-                    Log.d(TAG,"Found video sender.")
+                    Log.e(TAG,"Found video sender.")
                     localVideoSender = sender
                 }
             }
@@ -394,59 +462,67 @@ class TestActivity : AppCompatActivity() {
 //        val pcConstraints = MediaConstraints()
         val pcObserver: Observer = object : Observer {
             override fun onSignalingChange(signalingState: SignalingState) {
-                Log.e(TAG,"onSignalingChange: ${signalingState.name} - ordinal: ${signalingState.ordinal}")
+                Log.e(TAG,"PeerConnection onSignalingChange: ${signalingState.name} - ordinal: ${signalingState.ordinal}")
 //                tvSignaling.text = " ${signalingState.name} - ordinal: ${signalingState.ordinal}"
             }
 
             override fun onIceConnectionChange(iceConnectionState: IceConnectionState) {
-                Log.e(TAG,"onIceConnectionChange: ${iceConnectionState.name} - ordinal: ${iceConnectionState.ordinal}")
+                Log.e(TAG,"PeerConnection onIceConnectionChange: ${iceConnectionState.name} - ordinal: ${iceConnectionState.ordinal}")
 //                tvIceServerStatus.text = " ${iceConnectionState.name} - ordinal: ${iceConnectionState.ordinal}"
             }
 
             override fun onIceConnectionReceivingChange(b: Boolean) {
-                Log.e(TAG,"onIceConnectionReceivingChange: $b")
+                Log.e(TAG,"PeerConnection onIceConnectionReceivingChange: $b")
             }
 
             override fun onIceGatheringChange(iceGatheringState: IceGatheringState) {
-                Log.e(TAG,"onIceGatheringChange: ${iceGatheringState.name} - ordinal: ${iceGatheringState.ordinal}")
+                Log.e(TAG,"PeerConnection onIceGatheringChange: ${iceGatheringState.name} - ordinal: ${iceGatheringState.ordinal}")
             }
 
             override fun onIceCandidate(iceCandidate: IceCandidate) {
 //                Log.e(TAG,"onIceCandidate: ")
-                val message = JSONObject()
-                try {
-                    message.put("type", "candidate")
-                    message.put("label", iceCandidate.sdpMLineIndex)
-                    message.put("id", iceCandidate.sdpMid)
-                    message.put("candidate", iceCandidate.sdp)
-                    Log.e(TAG,"onIceCandidate: sending candidate $message")
+                executor!!.execute {
+                    try {
+                        Thread.sleep(100)
+                    } catch (e: InterruptedException) {
+                        e.printStackTrace()
+                    }
+                    val message = JSONObject()
+                    try {
+                        message.put("type", "candidate")
+                        message.put("label", iceCandidate.sdpMLineIndex)
+                        message.put("id", iceCandidate.sdpMid)
+                        message.put("candidate", iceCandidate.sdp)
+                        Log.e(TAG,"onIceCandidate: sending candidate $message")
                     sendMessage(message)
-                } catch (e: JSONException) {
-                    e.printStackTrace()
+                    } catch (e: JSONException) {
+                        e.printStackTrace()
+                    }
                 }
+
             }
 
             override fun onIceCandidatesRemoved(iceCandidates: Array<IceCandidate>) {
-                Log.e(TAG,"onIceCandidatesRemoved: ${iceCandidates.size}")
+                Log.e(TAG,"PeerConnection onIceCandidatesRemoved: ${iceCandidates.size}")
             }
 
             override fun onAddStream(mediaStream: MediaStream) {
-                Log.e(TAG,"onAddStream: " + mediaStream.videoTracks.size)
+                Log.e(TAG,"PeerConnection onAddStream: " + mediaStream.videoTracks.size)
                 val remoteVideoTrack = mediaStream.videoTracks[0]
                 remoteVideoTrack.setEnabled(true)
                 remoteVideoTrack.addRenderer(VideoRenderer(surfaceView2))
             }
 
             override fun onRemoveStream(mediaStream: MediaStream) {
-                Log.e(TAG,"onRemoveStream: ")
+                Log.e(TAG,"PeerConnection onRemoveStream: $mediaStream")
             }
 
             override fun onDataChannel(dataChannel: DataChannel) {
-                Log.e(TAG,"onDataChannel: ")
+                Log.e(TAG,"PeerConnection onDataChannel: $dataChannel")
             }
 
             override fun onRenegotiationNeeded() {
-                Log.e(TAG,"onRenegotiationNeeded: ")
+                Log.e(TAG,"PeerConnection onRenegotiationNeeded: ")
             }
         }
         return factory.createPeerConnection(rtcConfig, pcConstraints, pcObserver)
@@ -492,6 +568,58 @@ class TestActivity : AppCompatActivity() {
         localAudioTrack!!.setEnabled(enableAudio)
         return localAudioTrack
     }
+
+    override fun onSetFailure(p0: String?) {
+        TODO("Not yet implemented")
+    }
+
+    override fun onSetSuccess() {
+        if (peerConnection == null) return
+        Log.e("TEST_DATA", "PeerConnection onSetSuccess   " + peerConnection!!.signalingState().toString())
+        if (isOffer) {
+            if (peerConnection!!.remoteDescription == null) {
+                Log.e("TEST_DATA", "Remote SDP set succesfully :$isOffer")
+                if (!isOffer) {
+//                    mEvent.onSendAnswer(mUserId, localSdp)
+                    SocketManager.getInstance()!!.sendAnswer(localSdp!!.description)
+                } else {
+//                    mEvent.onSendOffer(mUserId, localSdp)
+                    SocketManager.getInstance()!!.sendOffer(localSdp!!.description)
+                }
+            } else {
+                Log.e("TEST_DATA", "Remote SDP set succesfully")
+                drainCandidates()
+            }
+        } else {
+            if (peerConnection!!.localDescription != null) {
+                Log.e("TEST_DATA", "Local SDP set succesfully :$isOffer")
+                if (!isOffer) {
+//                    mEvent.onSendAnswer(mUserId, localSdp)
+                    SocketManager.getInstance()!!.sendAnswer(localSdp!!.description)
+                } else {
+                    SocketManager.getInstance()!!.sendOffer(localSdp!!.description)
+//                    mEvent.onSendOffer(mUserId, localSdp)
+                }
+                drainCandidates()
+            } else {
+                Log.e("TEST_DATA", "Remote SDP set succesfully")
+            }
+        }
+    }
+
+    override fun onCreateSuccess(origSdp: SessionDescription?) {
+        Log.e("TEST_DATA", "PeerConnection onCreateSuccess     " + origSdp!!.type)
+        val sdpString: String = origSdp.description
+        val sdp = SessionDescription(origSdp.type, sdpString)
+        localSdp = sdp
+        setLocalDescription(sdp)
+    }
+
+    override fun onCreateFailure(p0: String?) {
+        TODO("Not yet implemented")
+    }
+
+
 
 //    private fun createVideoTrack(capturer: VideoCapturer): VideoTrack? {
 //        videoSource = factory!!.createVideoSource(capturer)
