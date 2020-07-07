@@ -34,10 +34,10 @@ interface IEvent {
 
     // ice-candidate
     fun onIceCandidate(
-        userId: String?,
-        id: String?,
-        label: Int,
-        candidate: String?
+        sdp: String?,
+        sdpMLineIndex: Int,
+        sdpMid: String?,
+        action: String?
     )
 
     fun onLeave(userId: String?)
@@ -49,5 +49,8 @@ interface IEvent {
     fun onDisConnect(userId: String?)
 
     fun reConnect()
+
+    // viết thêm để set remote description
+    fun onSetRemoteDescription(sdp: String?, type: String?)
 
 }

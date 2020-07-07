@@ -36,11 +36,11 @@ class DWebSocket(val serverUri: URI, val iEvent: IEvent) : WebSocketClient(serve
 
     override fun onMessage(message: String?) {
         Log.e("TEST_DATA","DWebSocket onMessage $message")
-//        handleMessage(message)
+        handleMessage(message)
     }
 
     override fun onError(ex: Exception?) {
-        Log.e("TEST_DATA","DWebSocket onError")
+        Log.e("TEST_DATA","DWebSocket onError: ${ex.toString()}")
         iEvent.logout("onError")
         connectFlag = false
     }
@@ -52,69 +52,88 @@ class DWebSocket(val serverUri: URI, val iEvent: IEvent) : WebSocketClient(serve
 
     private fun handleMessage(message: String?) {
         val map: Map<*, *> = gson.fromJson(message, MutableMap::class.java)
-        val eventName = map["eventName"] as String? ?: return
+        val eventName = map["action"] as String? ?: return
         Log.e("TEST_DATA","WebSocket handle message: $eventName" )
-        // 登录成功
-        if (eventName == "__login_success") {
-            handleLogin(map)
-            return
+        when(eventName){
+            "sdp"->{
+                val type =  map["type"] as String?
+                if(type.equals("offer")){
+
+                }else{
+                    val sdp =  map["sdp"] as String?
+                    val type =  map["type"] as String?
+                    iEvent.onSetRemoteDescription(sdp, type)
+                }
+            }
+            "candidate"->{
+                val sdp =  map["sdp"] as String?
+                val sdpMLineIndex =  map["sdpMLineIndex"] as Double
+                val sdpMid =  map["sdpMid"] as String?
+                val action =  map["action"] as String?
+                iEvent.onIceCandidate(sdp, sdpMLineIndex.toInt(), sdpMid, action)
+            }
         }
-        // 被邀请
-        if (eventName == "__invite") {
-            handleInvite(map)
-            return
-        }
-        // 取消拨出
-        if (eventName == "__cancel") {
-            handleCancel(map)
-            return
-        }
-        // 响铃
-        if (eventName == "__ring") {
-            handleRing(map)
-            return
-        }
-        // 进入房间
-        if (eventName == "__peers") {
-            handlePeers(map)
-            return
-        }
-        // 新人入房间
-        if (eventName == "__new_peer") {
-            handleNewPeer(map)
-            return
-        }
-        // 拒绝接听
-        if (eventName == "__reject") {
-            handleReject(map)
-            return
-        }
-        // offer
-        if (eventName == "__offer") {
-            handleOffer(map)
-            return
-        }
-        // answer
-        if (eventName == "__answer") {
-            handleAnswer(map)
-            return
-        }
-        // ice-candidate
-        if (eventName == "__ice_candidate") {
-            handleIceCandidate(map)
-        }
-        // 离开房间
-        if (eventName == "__leave") {
-            handleLeave(map)
-        }
-        // 切换到语音
-        if (eventName == "__audio") {
-            handleTransAudio(map)
-        }
-        // 意外断开
-        if (eventName == "__disconnect") {
-            handleDisConnect(map)
-        }
+//        // 登录成功
+//        if (eventName == "__login_success") {
+//            handleLogin(map)
+//            return
+//        }
+//        // 被邀请
+//        if (eventName == "__invite") {
+//            handleInvite(map)
+//            return
+//        }
+//        // 取消拨出
+//        if (eventName == "__cancel") {
+//            handleCancel(map)
+//            return
+//        }
+//        // 响铃
+//        if (eventName == "__ring") {
+//            handleRing(map)
+//            return
+//        }
+//        // 进入房间
+//        if (eventName == "__peers") {
+//            handlePeers(map)
+//            return
+//        }
+//        // 新人入房间
+//        if (eventName == "__new_peer") {
+//            handleNewPeer(map)
+//            return
+//        }
+//        // 拒绝接听
+//        if (eventName == "__reject") {
+//            handleReject(map)
+//            return
+//        }
+//        // offer
+//        if (eventName == "__offer") {
+//            handleOffer(map)
+//            return
+//        }
+//        // answer
+//        if (eventName == "__answer") {
+//            handleAnswer(map)
+//            return
+//        }
+//        // ice-candidate
+//        if (eventName == "__ice_candidate") {
+//            handleIceCandidate(map)
+//        }
+//        // 离开房间
+//        if (eventName == "__leave") {
+//            handleLeave(map)
+//        }
+//        // 切换到语音
+//        if (eventName == "__audio") {
+//            handleTransAudio(map)
+//        }
+//        // 意外断开
+//        if (eventName == "__disconnect") {
+//            handleDisConnect(map)
+//        }
     }
 
     private fun handleDisConnect(map: Map<*, *>) {
@@ -149,7 +168,7 @@ class DWebSocket(val serverUri: URI, val iEvent: IEvent) : WebSocketClient(serve
             val id = data["id"] as String?
             val label = data["label"] as Int
             val candidate = data["candidate"] as String?
-            iEvent.onIceCandidate(userID, id, label, candidate)
+//            iEvent.onIceCandidate(userID, id, label, candidate)
         }
     }
 

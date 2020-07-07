@@ -1,11 +1,14 @@
 package com.app.testvideocall
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import org.json.JSONException
 import org.json.JSONObject
+import org.webrtc.IceCandidate
+import org.webrtc.SessionDescription
 import java.net.URI
 import java.net.URISyntaxException
 import java.security.SecureRandom
@@ -25,6 +28,8 @@ class SocketManager : IEvent{
 
     private val handler = Handler(Looper.getMainLooper())
 
+    private var activity: Activity? = null
+
     companion object{
         fun getInstance(): SocketManager? {
             return Holder.socketManager
@@ -35,7 +40,9 @@ class SocketManager : IEvent{
         val socketManager = SocketManager()
     }
 
-
+    fun setActivity(activity_ : Activity){
+        this.activity = activity_
+    }
 
     fun connect(url: String, userId: String, device: Int) {
         if (webSocket == null || !webSocket!!.isOpen()) {
@@ -113,7 +120,11 @@ class SocketManager : IEvent{
     override fun onAnswer(userId: String?, sdp: String?) {
     }
 
-    override fun onIceCandidate(userId: String?, id: String?, label: Int, candidate: String?) {
+    override fun onIceCandidate( sdp: String?,sdpMLineIndex: Int,sdpMid: String?, action: String?) {
+        Log.e("TEST_DATA","SocketManager onIceCandidate activity: $activity")
+        if(activity !=null && activity is TestActivity){
+            ((activity as TestActivity).addRemoteIceCandidate(IceCandidate(sdpMid, sdpMLineIndex, sdp)))
+        }
     }
 
     override fun onLeave(userId: String?) {
@@ -131,6 +142,13 @@ class SocketManager : IEvent{
     override fun reConnect() {
     }
 
+    override fun onSetRemoteDescription(sdp: String?, type: String?) {
+        Log.e("TEST_DATA","SocketManager onSetRemoteDescription activity: $activity - type: $type")
+        if(activity !=null && activity is TestActivity){
+            ((activity as TestActivity).setRemoteDescription(SessionDescription(SessionDescription.Type.ANSWER,  sdp)))
+        }
+    }
+
     fun sendMessage(text: String){
         if (webSocket != null) {
             Log.e("TEST_DATA","send message: $text")
@@ -140,42 +158,50 @@ class SocketManager : IEvent{
 
     // send answer
     fun sendAnswer(sdp: String) {
-//        val map: MutableMap<String, Any> =
-//            HashMap()
-//        val childMap: MutableMap<String, Any> =
-//            HashMap()
-//        childMap["sdp"] = sdp
-////        childMap["fromID"] = myId
-////        childMap["userID"] = userId
-////        map["data"] = childMap
-//        map["type"] = "answer"
-//        val `object` = JSONObject(map as Map<*, *>)
-//        val jsonString: String = `object`.toString()
-//        Log.e("TEST_DATA", "sendAnswer send-->$jsonString")
         val message = JSONObject()
         try {
-            message.put("type", "answer") //SessionDescription.Type.ANSWER
             message.put("sdp", sdp)
+            message.put("action", "sdp")
+            message.put("type", "answer") //SessionDescription.Type.ANSWER
             sendMessage(message.toString())
         } catch (e: JSONException) {
             e.printStackTrace()
         }
-//        sendMessage(jsonString)
     }
 
     // send offer
     fun sendOffer(sdp: String) {
         val message = JSONObject()
         try {
-            message.put("type", "offer") //SessionDescription.Type.OFFER
             message.put("sdp", sdp)
+            message.put("action", "sdp")
+            message.put("type", "offer") //SessionDescription.Type.OFFER
             sendMessage(message.toString())
         } catch (e: JSONException) {
             e.printStackTrace()
         }
-//        sendMessage(jsonString)
     }
 
+    // send ice-candidate
+    fun sendIceCandidate(sdp: String,sdpMid: String,sdpMLineIndex: Int) {
+//        {
+//            "sdp":"candidate:3382678889 1 udp 2122260223 192.168.100.133 64571 typ host generation 0 ufrag sGXr network-id 1 network-cost 10",
+//            "sdpMLineIndex":0,
+//            "sdpMid":"0",
+//            "action":"candidate"
+//        }
+
+        val message = JSONObject()
+        try {
+            message.put("sdp", sdp)
+            message.put("action", "candidate")
+            message.put("sdpMLineIndex", sdpMLineIndex)
+            message.put("sdpMid", sdpMid)
+            sendMessage(message.toString())
+        } catch (e: JSONException) {
+            e.printStackTrace()
+        }
+    }
 
     class TrustManagerTest : X509TrustManager {
         @SuppressLint("TrustAllX509TrustManager")
