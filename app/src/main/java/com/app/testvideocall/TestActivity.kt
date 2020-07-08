@@ -510,6 +510,7 @@ class TestActivity : AppCompatActivity(), SdpObserver {
         iceServers.add(IceServer("turns:ss-turn2.xirsys.com:5349?transport=tcp","yEMjNNWgsYpAE1yBfxi9aEcdyVR7h7Oqh1kQmucfFgre3wn-rvQmUCeBgiJ-OL-sAAAAAF77JAJraG9haW5ib3g=","1989b4ea-bac6-11ea-a6ed-0242ac140004"))
         val rtcConfig = RTCConfiguration(iceServers)
         rtcConfig.continualGatheringPolicy = ContinualGatheringPolicy.GATHER_CONTINUALLY
+        rtcConfig.rtcpMuxPolicy = RtcpMuxPolicy.NEGOTIATE
 //        val pcConstraints = offerOrAnswerConstraint()
 //        val pcConstraints = MediaConstraints()
         val pcObserver: Observer = object : Observer {
